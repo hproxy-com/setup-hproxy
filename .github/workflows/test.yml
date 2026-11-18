@@ -1,0 +1,75 @@
+name: Test
+
+# The action as a workflow uses it: on Linux (x64 and ARM), macOS and Windows it installs hproxy and
+# answers; on Linux the rotating proxy carries real traffic through a test proxy on the machine.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: Install on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - id: hproxy
+        uses: ./
+
+      - name: It answers
+        shell: bash
+        env:
+          VERSION: ${{ steps.hproxy.outputs.version }}
+        run: |
+          test -n "$VERSION"
+          hproxy --version
+          hproxy list --limit 2
+
+  rotate:
+    name: The rotating proxy carries traffic (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Two test proxies on this machine (tinyproxy, from Ubuntu)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tinyproxy > /dev/null
+          sudo systemctl stop tinyproxy 2> /dev/null || true
+          for port in 3128 3129; do
+          printf 'Port %s\nListen 127.0.0.1\nTimeout 60\nAllow 127.0.0.1\nConnectPort 443\nLogFile "%s/tinyproxy-%s.log"\nLogLevel Connect\n' "$port" "$PWD" "$port" > "tinyproxy-$port.conf"
+          tinyproxy -c "tinyproxy-$port.conf"
+          done
+          printf '127.0.0.1:3128\n127.0.0.1:3129\n' > proxies.txt
+
+      - id: hproxy
+        uses: ./
+        with:
+          proxies-file: proxies.txt
+          rotate: every
+
+      - name: Requests go through it, and through both test proxies in turn
+        env:
+          URL: ${{ steps.hproxy.outputs.proxy-url }}
+        run: |
+          test "$URL" = "http://127.0.0.1:8080"
+          test "$HTTPS_PROXY" = "$URL"
+          for i in 1 2 3 4; do
+            curl -fsS -o /dev/null https://hproxy.com/install.sh
+          done
+          first=$(grep -c 'Request (file descriptor' tinyproxy-3128.log || true)
+          second=$(grep -c 'Request (file descriptor' tinyproxy-3129.log || true)
+          echo "through the first test proxy: $first, through the second: $second"
+          test "$first" -ge 1
+          test "$second" -ge 1
+          hproxy status

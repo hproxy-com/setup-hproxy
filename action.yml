@@ -1,0 +1,120 @@
+name: Set up hproxy
+description: Install the hproxy command-line tool, and start a rotating proxy for the rest of the job if you like.
+author: HProxy
+branding:
+  icon: shuffle
+  color: blue
+
+inputs:
+  connect:
+    description: >-
+      Start a rotating proxy for the rest of the job: "free" for the free HProxy pool, or one proxy
+      line in any shape your provider prints (host:port:user:pass, http://user:pass@host:port,
+      socks5://...). Keep a line with a login in a secret. Empty: install only.
+    required: false
+    default: ""
+  proxies-file:
+    description: >-
+      A file in the workspace with one proxy per line, used in turn (in place of connect).
+    required: false
+    default: ""
+  rotate:
+    description: "With proxies-file: every, every:N, every:Nm (minutes), random or on-failure."
+    required: false
+    default: every
+  country:
+    description: "With connect: free, a two-letter country, e.g. US or DE."
+    required: false
+    default: ""
+  listen:
+    description: Where the proxy listens. Only this job's machine can reach it.
+    required: false
+    default: 127.0.0.1:8080
+  export-proxy:
+    description: Set HTTP_PROXY, HTTPS_PROXY and ALL_PROXY for the steps that follow.
+    required: false
+    default: "true"
+
+outputs:
+  version:
+    description: The hproxy version installed.
+    value: ${{ steps.install.outputs.version }}
+  proxy-url:
+    description: The proxy's address, http://127.0.0.1:8080, when one was started.
+    value: ${{ steps.connect.outputs.proxy-url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install hproxy (Linux, macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        HPROXY_INSTALL_DIR: ${{ runner.tool_cache }}/hproxy
+      run: |
+        curl -fsSL https://hproxy.com/install.sh | sh
+        echo "$HPROXY_INSTALL_DIR" >> "$GITHUB_PATH"
+
+    - name: Install hproxy (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        HPROXY_INSTALL_DIR: ${{ runner.tool_cache }}\hproxy
+        HPROXY_NO_PATH: "1"
+      run: |
+        irm https://hproxy.com/install.ps1 | iex
+        Add-Content -Path $env:GITHUB_PATH -Value $env:HPROXY_INSTALL_DIR
+
+    - name: The version
+      id: install
+      shell: bash
+      env:
+        HPROXY_NO_UPDATE_CHECK: "1"
+        HPROXY_NO_USAGE: "1"
+      run: |
+        version=$(hproxy --version | sed -n 's/^hproxy //p')
+        echo "hproxy $version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    - name: Start the rotating proxy
+      id: connect
+      if: inputs.connect != '' || inputs.proxies-file != ''
+      shell: bash
+      env:
+        CONNECT: ${{ inputs.connect }}
+        PROXIES_FILE: ${{ inputs.proxies-file }}
+        ROTATE: ${{ inputs.rotate }}
+        COUNTRY: ${{ inputs.country }}
+        LISTEN: ${{ inputs.listen }}
+        EXPORT: ${{ inputs.export-proxy }}
+        HPROXY_NO_UPDATE_CHECK: "1"
+        HPROXY_NO_USAGE: "1"
+      run: |
+        args=(connect)
+        if [ -n "$PROXIES_FILE" ]; then
+          args+=(--file "$PROXIES_FILE" --rotate "$ROTATE")
+        elif [ "$CONNECT" = free ]; then
+          args+=(--free)
+          if [ -n "$COUNTRY" ]; then args+=(--country "$COUNTRY"); fi
+        else
+          args+=("$CONNECT")
+        fi
+        args+=(--listen "$LISTEN" --background --json)
+        ready=$(hproxy "${args[@]}")
+        url=$(printf '%s' "$ready" | sed -n 's/.*"http_proxy":"\([^"]*\)".*/\1/p')
+        if [ -z "$url" ]; then
+          echo "::error::the proxy did not start: $ready"
+          exit 1
+        fi
+        echo "The rotating proxy listens at $url"
+        echo "proxy-url=$url" >> "$GITHUB_OUTPUT"
+        if [ "$EXPORT" = true ]; then
+          {
+            echo "HTTP_PROXY=$url"
+            echo "HTTPS_PROXY=$url"
+            echo "ALL_PROXY=$url"
+            echo "http_proxy=$url"
+            echo "https_proxy=$url"
+            echo "all_proxy=$url"
+          } >> "$GITHUB_ENV"
+        fi
