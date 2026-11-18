@@ -48,7 +48,7 @@ jobs:
           sudo systemctl stop tinyproxy 2> /dev/null || true
           for port in 3128 3129; do
           printf 'Port %s\nListen 127.0.0.1\nTimeout 60\nAllow 127.0.0.1\nConnectPort 443\nLogFile "%s/tinyproxy-%s.log"\nLogLevel Connect\n' "$port" "$PWD" "$port" > "tinyproxy-$port.conf"
-          tinyproxy -c "tinyproxy-$port.conf"
+          tinyproxy -c "$PWD/tinyproxy-$port.conf"
           done
           printf '127.0.0.1:3128\n127.0.0.1:3129\n' > proxies.txt
 
