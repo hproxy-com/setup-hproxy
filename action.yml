@@ -26,12 +26,34 @@ inputs:
     description: "With connect: free, a two-letter country, e.g. US or DE."
     required: false
     default: ""
+  socks5:
+    description: "With connect: free, SOCKS5 exits only."
+    required: false
+    default: "false"
+  skip:
+    description: >-
+      Sites that go straight out, past the proxy: names (each covers everything under it),
+      addresses or ranges such as 10.0.0.0/8, separated by commas.
+    required: false
+    default: ""
+  only:
+    description: Only these sites use the proxy, everything else goes straight out. Same shapes as skip.
+    required: false
+    default: ""
+  via:
+    description: >-
+      A proxy in front of the proxy, so the proxy only ever sees its address. Any shape a
+      provider prints; keep a line with a login in a secret.
+    required: false
+    default: ""
   listen:
     description: Where the proxy listens. Only this job's machine can reach it.
     required: false
     default: 127.0.0.1:8080
   export-proxy:
-    description: Set HTTP_PROXY, HTTPS_PROXY and ALL_PROXY for the steps that follow.
+    description: >-
+      Set HTTP_PROXY, HTTPS_PROXY and ALL_PROXY for the steps that follow, and add this machine
+      (localhost, 127.0.0.1, ::1) to NO_PROXY so the job's own local servers stay reachable.
     required: false
     default: "true"
 
@@ -85,6 +107,10 @@ runs:
         PROXIES_FILE: ${{ inputs.proxies-file }}
         ROTATE: ${{ inputs.rotate }}
         COUNTRY: ${{ inputs.country }}
+        SOCKS5: ${{ inputs.socks5 }}
+        SKIP: ${{ inputs.skip }}
+        ONLY: ${{ inputs.only }}
+        VIA: ${{ inputs.via }}
         LISTEN: ${{ inputs.listen }}
         EXPORT: ${{ inputs.export-proxy }}
         HPROXY_NO_UPDATE_CHECK: "1"
@@ -96,9 +122,13 @@ runs:
         elif [ "$CONNECT" = free ]; then
           args+=(--free)
           if [ -n "$COUNTRY" ]; then args+=(--country "$COUNTRY"); fi
+          if [ "$SOCKS5" = true ]; then args+=(--socks5); fi
         else
           args+=("$CONNECT")
         fi
+        if [ -n "$SKIP" ]; then args+=(--skip "$SKIP"); fi
+        if [ -n "$ONLY" ]; then args+=(--only "$ONLY"); fi
+        if [ -n "$VIA" ]; then args+=(--via "$VIA"); fi
         args+=(--listen "$LISTEN" --background --json)
         ready=$(hproxy "${args[@]}")
         url=$(printf '%s' "$ready" | sed -n 's/.*"http_proxy":"\([^"]*\)".*/\1/p')
@@ -109,6 +139,10 @@ runs:
         echo "The rotating proxy listens at $url"
         echo "proxy-url=$url" >> "$GITHUB_OUTPUT"
         if [ "$EXPORT" = true ]; then
+          # This machine stays off the proxy: a proxy elsewhere cannot reach the job's own local
+          # servers, and the job's own exemptions are kept.
+          here=localhost,127.0.0.1,::1
+          no_proxy_now=${NO_PROXY:-${no_proxy:-}}
           {
             echo "HTTP_PROXY=$url"
             echo "HTTPS_PROXY=$url"
@@ -116,5 +150,7 @@ runs:
             echo "http_proxy=$url"
             echo "https_proxy=$url"
             echo "all_proxy=$url"
+            echo "NO_PROXY=${no_proxy_now:+$no_proxy_now,}$here"
+            echo "no_proxy=${no_proxy_now:+$no_proxy_now,}$here"
           } >> "$GITHUB_ENV"
         fi

@@ -74,3 +74,41 @@ jobs:
           test "$first" -ge 1
           test "$second" -ge 1
           hproxy status
+
+      - name: The job's own local servers stay off the proxy (NO_PROXY)
+        run: |
+          case ",$NO_PROXY," in
+            *,127.0.0.1,*) echo "NO_PROXY=$NO_PROXY" ;;
+            *) echo "::error::NO_PROXY lacks 127.0.0.1: $NO_PROXY"; exit 1 ;;
+          esac
+          python3 -m http.server 9999 --bind 127.0.0.1 > /dev/null 2>&1 &
+          sleep 1
+          seen() { cat tinyproxy-3128.log tinyproxy-3129.log | grep -c 'Request (file descriptor' || true; }
+          before=$(seen)
+          curl -fsS -o /dev/null http://127.0.0.1:9999/
+          after=$(seen)
+          echo "requests the test proxies saw: $before before, $after after"
+          test "$before" = "$after"
+
+      - id: skipping
+        uses: ./
+        with:
+          proxies-file: proxies.txt
+          listen: 127.0.0.1:8081
+          skip: hproxy.com
+          export-proxy: "false"
+
+      - name: A skipped site goes straight out, the rest through the proxies
+        env:
+          URL: ${{ steps.skipping.outputs.proxy-url }}
+        run: |
+          test "$URL" = "http://127.0.0.1:8081"
+          seen() { cat tinyproxy-3128.log tinyproxy-3129.log | grep -c 'Request (file descriptor' || true; }
+          before=$(seen)
+          curl -fsS -o /dev/null -x "$URL" https://hproxy.com/install.sh
+          skipped=$(seen)
+          curl -fsS -o /dev/null -x "$URL" https://github.com/
+          through=$(seen)
+          echo "requests the test proxies saw: $before before, $skipped after hproxy.com, $through after github.com"
+          test "$before" = "$skipped"
+          test "$through" -gt "$skipped"
