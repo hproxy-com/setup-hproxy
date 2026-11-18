@@ -129,8 +129,24 @@ runs:
         if [ -n "$SKIP" ]; then args+=(--skip "$SKIP"); fi
         if [ -n "$ONLY" ]; then args+=(--only "$ONLY"); fi
         if [ -n "$VIA" ]; then args+=(--via "$VIA"); fi
-        args+=(--listen "$LISTEN" --background --json)
-        ready=$(hproxy "${args[@]}")
+        args+=(--listen "$LISTEN" --json)
+        if [ -n "$SKIP$ONLY$VIA" ]; then
+          # A connection in the foreground keeps its sites and first hop on every hproxy version,
+          # one in the background from hproxy 0.4.9 on. So this one runs as a process of the job,
+          # until the job ends.
+          log="$RUNNER_TEMP/hproxy-connect-$RANDOM.log"
+          nohup hproxy "${args[@]}" > "$log" 2>&1 &
+          pid=$!
+          ready=""
+          for i in $(seq 120); do
+            ready=$(grep -m1 '"listening"' "$log" 2> /dev/null || true)
+            if [ -n "$ready" ] || ! kill -0 "$pid" 2> /dev/null; then break; fi
+            sleep 0.5
+          done
+          if [ -z "$ready" ]; then ready=$(cat "$log"); fi
+        else
+          ready=$(hproxy "${args[@]}" --background)
+        fi
         url=$(printf '%s' "$ready" | sed -n 's/.*"http_proxy":"\([^"]*\)".*/\1/p')
         if [ -z "$url" ]; then
           echo "::error::the proxy did not start: $ready"

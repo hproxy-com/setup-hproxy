@@ -35,6 +35,30 @@ jobs:
           hproxy --version
           hproxy list --limit 2
 
+      # A proxy nobody answers at, and this machine skipped: only a request that skips the proxy
+      # can get through, so a page from a local server proves the rule is kept, on every system.
+      - id: routed
+        uses: ./
+        with:
+          connect: 127.0.0.1:9
+          skip: 127.0.0.1
+          listen: 127.0.0.1:8090
+          export-proxy: "false"
+
+      - name: A skipped site goes straight out
+        shell: bash
+        env:
+          URL: ${{ steps.routed.outputs.proxy-url }}
+        run: |
+          test "$URL" = "http://127.0.0.1:8090"
+          if [ "$RUNNER_OS" = Windows ]; then py=python; else py=python3; fi
+          mkdir -p site && echo "straight out" > site/page.txt
+          (cd site && "$py" -m http.server 9998 --bind 127.0.0.1 > /dev/null 2>&1 &)
+          for i in $(seq 20); do curl -fsS -o /dev/null http://127.0.0.1:9998/page.txt && break; sleep 0.5; done
+          got=$(curl -fsS -x "$URL" http://127.0.0.1:9998/page.txt)
+          echo "through the proxy with 127.0.0.1 skipped: $got"
+          test "$got" = "straight out"
+
   rotate:
     name: The rotating proxy carries traffic (Linux)
     # Ubuntu 24.04: on 26.04 an AppArmor profile keeps tinyproxy to configs in /etc/tinyproxy.
