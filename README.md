@@ -8,7 +8,7 @@ proxy for the rest of the job if you like.
 
 ```yaml
 - uses: hproxy-com/setup-hproxy@v1
-- run: hproxy list --protocol socks5 --country US --limit 5
+- run: hproxy check --file proxies.txt --alive   # which of your proxies work from this runner
 ```
 
 It installs through hproxy.com's own installers, which check the file against its SHA-256 first.
@@ -19,12 +19,6 @@ The steps after it reach the internet through the proxy: `HTTP_PROXY`, `HTTPS_PR
 `ALL_PROXY` point at it.
 
 ```yaml
-# The free HProxy pool, with a new exit whenever one stops answering
-- uses: hproxy-com/setup-hproxy@v1
-  with:
-    connect: free
-    country: US
-
 # Your own proxy, its login kept in a secret
 - uses: hproxy-com/setup-hproxy@v1
   with:
@@ -35,6 +29,12 @@ The steps after it reach the internet through the proxy: `HTTP_PROXY`, `HTTPS_PR
   with:
     proxies-file: proxies.txt
     rotate: every
+
+# The free HProxy pool of public proxies, a new exit whenever one stops answering
+- uses: hproxy-com/setup-hproxy@v1
+  with:
+    connect: free
+    country: US
 ```
 
 A proxy line can take any shape your provider prints: `host:port:user:pass`,
@@ -72,7 +72,7 @@ one, over plain HTTP on the proxy's own port:
 # Only these through the proxy
 - uses: hproxy-com/setup-hproxy@v1
   with:
-    connect: free
+    connect: ${{ secrets.PROXY_LINE }}
     only: example.com
 
 # Two proxies in a row: yours only ever sees the first one's address
@@ -89,7 +89,7 @@ address, or a range.
 
 | Input | Default | What it does |
 | --- | --- | --- |
-| `connect` | | `free`, or one proxy line. Empty: install only. |
+| `connect` | | One proxy line, or `free` for the free pool. Empty: install only. |
 | `proxies-file` | | A file with one proxy per line, used in turn. |
 | `rotate` | `every` | With `proxies-file`: `every`, `every:N`, `every:Nm` (minutes), `random`, `on-failure`. |
 | `country` | | With `connect: free`: a two-letter country. |
