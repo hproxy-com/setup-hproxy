@@ -21,7 +21,7 @@ jobs:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - id: hproxy
         uses: ./
@@ -64,7 +64,7 @@ jobs:
     # Ubuntu 24.04: on 26.04 an AppArmor profile keeps tinyproxy to configs in /etc/tinyproxy.
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Two test proxies on this machine (tinyproxy, from Ubuntu)
         run: |
