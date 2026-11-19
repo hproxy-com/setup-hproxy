@@ -42,6 +42,24 @@ A proxy line can take any shape your provider prints: `host:port:user:pass`,
 so only the job's own machine can reach it. The job's own machine stays off the proxy
 (`NO_PROXY` gets `localhost,127.0.0.1,::1`), so a test server the job starts stays reachable.
 
+## A new IP when the job decides
+
+With `rotate: on-failure` the proxy stays on one proxy of your list until a step asks for the next
+one, over plain HTTP on the proxy's own port:
+
+```yaml
+- id: hproxy
+  uses: hproxy-com/setup-hproxy@v1
+  with:
+    proxies-file: proxies.txt
+    rotate: on-failure
+- run: ./scrape-first-half.sh
+- run: curl -fsS -X POST "${{ steps.hproxy.outputs.control-url }}/new-ip"
+- run: ./scrape-second-half.sh
+```
+
+`GET .../status` says which proxy is in use. Every answer is one line of JSON.
+
 ## Which sites use it
 
 ```yaml
@@ -88,6 +106,7 @@ address, or a range.
 | --- | --- |
 | `version` | The hproxy version installed. |
 | `proxy-url` | The proxy's address, when one was started. |
+| `control-url` | Where a step switches it (`POST .../new-ip`) and reads it (`GET .../status`). |
 
 ## License
 

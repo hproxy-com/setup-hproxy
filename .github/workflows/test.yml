@@ -99,6 +99,17 @@ jobs:
           test "$second" -ge 1
           hproxy status
 
+      - name: A step switches the proxy and reads it, over the control address
+        env:
+          CONTROL: ${{ steps.hproxy.outputs.control-url }}
+        run: |
+          test "$CONTROL" = "http://127.0.0.1:8080/hproxy"
+          before=$(curl -fsS "$CONTROL/status")
+          after=$(curl -fsS -X POST "$CONTROL/new-ip")
+          echo "before: $before"
+          echo "after:  $after"
+          echo "$after" | grep -q '"ok":true'
+
       - name: The job's own local servers stay off the proxy (NO_PROXY)
         run: |
           case ",$NO_PROXY," in

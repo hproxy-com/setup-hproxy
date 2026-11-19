@@ -64,6 +64,11 @@ outputs:
   proxy-url:
     description: The proxy's address, http://127.0.0.1:8080, when one was started.
     value: ${{ steps.connect.outputs.proxy-url }}
+  control-url:
+    description: >-
+      Where a later step switches and reads the proxy, http://127.0.0.1:8080/hproxy, when one was
+      started: POST its /new-ip for the next proxy, GET its /status (hproxy 0.4.9 and newer).
+    value: ${{ steps.connect.outputs.control-url }}
 
 runs:
   using: composite
@@ -154,6 +159,7 @@ runs:
         fi
         echo "The rotating proxy listens at $url"
         echo "proxy-url=$url" >> "$GITHUB_OUTPUT"
+        echo "control-url=$url/hproxy" >> "$GITHUB_OUTPUT"
         if [ "$EXPORT" = true ]; then
           # This machine stays off the proxy: a proxy elsewhere cannot reach the job's own local
           # servers, and the job's own exemptions are kept.
